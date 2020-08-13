@@ -1255,9 +1255,7 @@ moves_loop: // When in check, search starts from here
       }
 	  if(r >= 1)
 	  {
-		  Depth d = newDepth - r;
-
-		  value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
+		  value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth - r, true);
 
 		  doFullDepthSearch = value > alpha;
 
