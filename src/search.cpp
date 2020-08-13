@@ -1166,7 +1166,8 @@ moves_loop: // When in check, search starts from here
 
       // Step 16. Reduced depth search (LMR, ~200 Elo). If the move fails high it will be
       // re-searched at full depth.
-      if (    depth >= 3
+      Depth r = 0;
+      if (    depth >= 2
           &&  moveCount > 1 + 2 * rootNode + 2 * (PvNode && abs(bestValue) < 2)
           && (!rootNode || thisThread->best_move_count(move) == 0)
           && (  !captureOrPromotion
@@ -1175,7 +1176,7 @@ moves_loop: // When in check, search starts from here
               || cutNode
               || thisThread->ttHitAverage < 427 * TtHitAverageResolution * TtHitAverageWindow / 1024))
       {
-          Depth r = reduction(improving, depth, moveCount);
+          r = reduction(improving, depth, moveCount);
 
           // Decrease reduction at non-check cut nodes for second move at low depths
           if (   cutNode
@@ -1251,14 +1252,16 @@ moves_loop: // When in check, search starts from here
                 && ss->staticEval + PieceValue[EG][pos.captured_piece()] + 213 * depth <= alpha)
                 r++;
           }
+      }
+	  if(r >= 1)
+	  {
+		  Depth d = newDepth - r;
 
-          Depth d = Utility::clamp(newDepth - r, 1, newDepth);
+		  value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
 
-          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
+		  doFullDepthSearch = value > alpha;
 
-          doFullDepthSearch = value > alpha && d != newDepth;
-
-          didLMR = true;
+		  didLMR = true;
       }
       else
       {
