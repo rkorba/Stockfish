@@ -1253,13 +1253,13 @@ moves_loop: // When in check, search starts from here
                 r++;
           }
       }
-	  if(r >= 1)
-	  {
-		  value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth - r, true);
+      if(r >= 1)
+      {
+          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth - r, true);
 
-		  doFullDepthSearch = value > alpha;
+          doFullDepthSearch = value > alpha;
 
-		  didLMR = true;
+          didLMR = true;
       }
       else
       {
