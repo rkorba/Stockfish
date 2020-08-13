@@ -809,7 +809,10 @@ namespace {
     if (   !rootNode // The required rootNode PV handling is not available in qsearch
         &&  depth == 1
         &&  eval <= alpha - RazorMargin)
-        return qsearch<NT>(pos, ss, alpha, beta);
+    {
+    	const Value v = qsearch<NT>(pos, ss, alpha, beta);
+        return std::max(v, eval+RazorMargin);
+    }
 
     improving =  (ss-2)->staticEval == VALUE_NONE ? (ss->staticEval > (ss-4)->staticEval
               || (ss-4)->staticEval == VALUE_NONE) : ss->staticEval > (ss-2)->staticEval;
@@ -817,9 +820,12 @@ namespace {
     // Step 8. Futility pruning: child node (~50 Elo)
     if (   !PvNode
         &&  depth < 8
-        &&  eval - futility_margin(depth, improving) >= beta
         &&  eval < VALUE_KNOWN_WIN) // Do not return unproven wins
-        return eval;
+    {
+    	const Value futilVal = eval - futility_margin(depth, improving);
+    	if(futilVal >= beta)
+            return futilVal;
+    }
 
     // Step 9. Null move search with verification search (~40 Elo)
     if (   !PvNode
@@ -867,7 +873,7 @@ namespace {
             thisThread->nmpMinPly = 0;
 
             if (v >= beta)
-                return nullValue;
+                return std::min(v, nullValue);
         }
     }
 
@@ -1106,7 +1112,7 @@ moves_loop: // When in check, search starts from here
           // that multiple moves fail high, and we can prune the whole subtree by returning
           // a soft bound.
           else if (singularBeta >= beta)
-              return singularBeta;
+              return std::min(value, ttValue);
 
           // If the eval of ttMove is greater than beta we try also if there is another
           // move that pushes it over beta, if so also produce a cutoff.
@@ -1117,7 +1123,7 @@ moves_loop: // When in check, search starts from here
               ss->excludedMove = MOVE_NONE;
 
               if (value >= beta)
-                  return beta;
+            	  return std::min(value, ttValue);
           }
       }
 
