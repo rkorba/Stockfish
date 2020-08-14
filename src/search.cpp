@@ -902,7 +902,7 @@ namespace {
         int probCutCount = 0;
 
         while (   (move = mp.next_move()) != MOVE_NONE
-               && probCutCount < 3)
+               && probCutCount < 2)
             if (move != excludedMove && pos.legal(move))
             {
                 assert(pos.capture_or_promotion(move));
@@ -1176,8 +1176,7 @@ moves_loop: // When in check, search starts from here
       {
           Depth r = reduction(improving, depth, moveCount);
 
-          if (PvNode
-        	  && depth <= 10
+          if (depth <= 10
               && moveCount <= 2
               && !ss->inCheck)
               r--;
@@ -1211,8 +1210,8 @@ moves_loop: // When in check, search starts from here
               if (ttCapture)
                   r++;
 
-              if (!PvNode && moveCount > 2)
-                  r++;
+              if(!PvNode)
+            	  r += 2;
 
               // Decrease reduction for moves that escape a capture. Filter out
               // castling moves, because they are coded as "king captures rook" and
