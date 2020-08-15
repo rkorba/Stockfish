@@ -842,7 +842,15 @@ namespace {
 
         pos.do_null_move(st);
 
-        Value nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
+        Value nullValue;
+        if(!cutNode && depth > R+1)
+        {
+        	nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R-2, !cutNode);
+        	if(nullValue >= beta)
+        		nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
+        }
+        else
+        	nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
 
         pos.undo_null_move();
 
@@ -862,7 +870,7 @@ namespace {
             thisThread->nmpMinPly = ss->ply + 3 * (depth-R) / 4;
             thisThread->nmpColor = us;
 
-            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, false);
+            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, true);
 
             thisThread->nmpMinPly = 0;
 
