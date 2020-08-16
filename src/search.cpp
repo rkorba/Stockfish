@@ -1551,16 +1551,11 @@ moves_loop: // When in check, search starts from here
               bestValue = std::max(bestValue, futilityValue);
               continue;
           }
-
-          if (futilityBase <= alpha && !pos.see_ge(move, VALUE_ZERO + 1))
-          {
-              bestValue = std::max(bestValue, futilityBase);
-              continue;
-          }
       }
 
       // Do not search moves with negative SEE values
-      if (  !ss->inCheck && !pos.see_ge(move))
+      const Value minSee = Value(givesCheck ? 0 : 80);
+      if (  !ss->inCheck && move != ttMove && !pos.see_ge(move, minSee))
           continue;
 
       // Speculative prefetch as early as possible
