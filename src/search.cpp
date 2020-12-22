@@ -1166,7 +1166,8 @@ moves_loop: // When in check, search starts from here
 
       // Step 16. Reduced depth search (LMR, ~200 Elo). If the move fails high it will be
       // re-searched at full depth.
-      if (    depth >= 3
+      Depth r = 0;
+      if (    depth >= 2
           &&  moveCount > 1 + 2 * rootNode
           && (  !captureOrPromotion
               || moveCountPruning
@@ -1174,7 +1175,7 @@ moves_loop: // When in check, search starts from here
               || cutNode
               || thisThread->ttHitAverage < 432 * TtHitAverageResolution * TtHitAverageWindow / 1024))
       {
-          Depth r = reduction(improving, depth, moveCount);
+          r += reduction(improving, depth, moveCount);
 
           // Decrease reduction if the ttHit running average is large
           if (thisThread->ttHitAverage > 537 * TtHitAverageResolution * TtHitAverageWindow / 1024)
@@ -1247,12 +1248,12 @@ moves_loop: // When in check, search starts from here
                   && ss->staticEval + PieceValue[EG][pos.captured_piece()] + 210 * depth <= alpha)
                   r++;
           }
+      }
+      if(r > 0) {
 
-          Depth d = std::clamp(newDepth - r, 1, newDepth);
+          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth-r, true);
 
-          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
-
-          doFullDepthSearch = value > alpha && d != newDepth;
+          doFullDepthSearch = value > alpha;
 
           didLMR = true;
       }
