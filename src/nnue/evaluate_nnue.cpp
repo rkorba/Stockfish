@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2020 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@
 
 #include "evaluate_nnue.h"
 
-namespace Eval::NNUE {
+namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
   LargePagePtr<FeatureTransformer> feature_transformer;
@@ -141,4 +141,4 @@ namespace Eval::NNUE {
     return ReadParameters(stream);
   }
 
-} // namespace Eval::NNUE
+} // namespace Stockfish::Eval::NNUE
