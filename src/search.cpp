@@ -165,7 +165,7 @@ namespace {
   uint64_t perft(Position& pos, Depth depth) {
 
     StateInfo st;
-    ASSERT_ALIGNED(&st, Eval::NNUE::kCacheLineSize);
+    ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
     uint64_t cnt, nodes = 0;
     const bool leaf = (depth == 2);
@@ -597,7 +597,7 @@ namespace {
 
     Move pv[MAX_PLY+1], capturesSearched[32], quietsSearched[64];
     StateInfo st;
-    ASSERT_ALIGNED(&st, Eval::NNUE::kCacheLineSize);
+    ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
     TTEntry* tte;
     Key posKey;
@@ -612,13 +612,12 @@ namespace {
 
     // Step 1. Initialize node
     Thread* thisThread = pos.this_thread();
-    ss->inCheck = pos.checkers();
-    priorCapture = pos.captured_piece();
-    Color us = pos.side_to_move();
-    moveCount = captureCount = quietCount = ss->moveCount = 0;
-    bestValue = -VALUE_INFINITE;
-    maxValue = VALUE_INFINITE;
-    ss->distanceFromPv = (PvNode ? 0 : ss->distanceFromPv);
+    ss->inCheck        = pos.checkers();
+    priorCapture       = pos.captured_piece();
+    Color us           = pos.side_to_move();
+    moveCount          = captureCount = quietCount = ss->moveCount = 0;
+    bestValue          = -VALUE_INFINITE;
+    maxValue           = VALUE_INFINITE;
 
     // Check for the available remaining time
     if (thisThread == Threads.main())
@@ -921,6 +920,7 @@ namespace {
             return probCutBeta;
 
         assert(probCutBeta < VALUE_INFINITE);
+
         MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &captureHistory);
         int probCutCount = 0;
         bool ttPv = ss->ttPv;
@@ -1010,6 +1010,13 @@ moves_loop: // When in check, search starts from here
     value = bestValue;
     singularQuietLMR = moveCountPruning = false;
 
+    // Indicate PvNodes that will probably fail low if the node was searched
+    // at a depth equal or greater than the current depth, and the result of this search was a fail low.
+    bool likelyFailLow =    PvNode
+                         && ttMove
+                         && (tte->bound() & BOUND_UPPER)
+                         && tte->depth() >= depth;
+
     // Mark this node as being searched
     ThreadHolding th(thisThread, posKey, ss->ply);
 
@@ -1047,14 +1054,6 @@ moves_loop: // When in check, search starts from here
       captureOrPromotion = pos.capture_or_promotion(move);
       movedPiece = pos.moved_piece(move);
       givesCheck = pos.gives_check(move);
-
-      // Indicate PvNodes that will probably fail low if node was searched with non-PV search
-      // at depth equal or greater to current depth and result of this search was far below alpha
-      bool likelyFailLow =    PvNode
-                           && ttMove
-                           && (tte->bound() & BOUND_UPPER)
-                           && ttValue < alpha + 200 + 100 * depth
-                           && tte->depth() >= depth;
 
       // Calculate new depth for this move
       newDepth = depth - 1;
@@ -1125,6 +1124,7 @@ moves_loop: // When in check, search starts from here
       {
           Value singularBeta = ttValue - ((formerPv + 4) * depth) / 2;
           Depth singularDepth = (depth - 1 + 3 * formerPv) / 2;
+
           ss->excludedMove = move;
           value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
           ss->excludedMove = MOVE_NONE;
@@ -1133,6 +1133,8 @@ moves_loop: // When in check, search starts from here
           {
               extension = 1;
               singularQuietLMR = !ttCapture;
+              if (!PvNode && value < singularBeta - 140)
+                  extension = 2;
           }
 
           // Multi-cut pruning
@@ -1156,16 +1158,6 @@ moves_loop: // When in check, search starts from here
           }
       }
 
-      // Check extension (~2 Elo)
-      else if (    givesCheck
-               && (pos.is_discovered_check_on_king(~us, move) || pos.see_ge(move)))
-          extension = 1;
-
-      // Last captures extension
-      else if (   PieceValue[EG][pos.captured_piece()] > PawnValueEg
-               && pos.non_pawn_material() <= 2 * RookValueMg)
-          extension = 1;
-
       // Add extension to new depth
       newDepth += extension;
 
@@ -1182,8 +1174,6 @@ moves_loop: // When in check, search starts from here
       // Step 15. Make the move
       pos.do_move(move, st, givesCheck);
 
-      (ss+1)->distanceFromPv = ss->distanceFromPv + moveCount - 1;
-
       // Step 16. Late moves reduction / extension (LMR, ~200 Elo)
       // We use various heuristics for the sons of a node after the first son has
       // been searched. In general we would like to reduce them, but there are many
@@ -1195,7 +1185,8 @@ moves_loop: // When in check, search starts from here
               || ss->staticEval + PieceValue[EG][pos.captured_piece()] <= alpha
               || cutNode
               || (!PvNode && !formerPv && captureHistory[movedPiece][to_sq(move)][type_of(pos.captured_piece())] < 3678)
-              || thisThread->ttHitAverage < 432 * TtHitAverageResolution * TtHitAverageWindow / 1024))
+              || thisThread->ttHitAverage < 432 * TtHitAverageResolution * TtHitAverageWindow / 1024)
+          && (!PvNode || ss->ply > 1 || thisThread->id() % 4 != 3))
       {
           Depth r = reduction(improving, depth, moveCount);
 
@@ -1209,15 +1200,19 @@ moves_loop: // When in check, search starts from here
 
           // Decrease reduction if position is or has been on the PV
           // and node is not likely to fail low. (~10 Elo)
-          if (ss->ttPv && !likelyFailLow)
+          if (   ss->ttPv
+              && !likelyFailLow)
               r -= 2;
 
           // Increase reduction at root and non-PV nodes when the best move does not change frequently
-          if ((rootNode || !PvNode) && thisThread->rootDepth > 10 && thisThread->bestMoveChanges <= 2)
+          if (   (rootNode || !PvNode)
+              && thisThread->rootDepth > 10
+              && thisThread->bestMoveChanges <= 2)
               r++;
 
           // More reductions for late moves if position was not in previous PV
-          if (moveCountPruning && !formerPv)
+          if (   moveCountPruning
+              && !formerPv)
               r++;
 
           // Decrease reduction if opponent's move count is high (~5 Elo)
@@ -1230,7 +1225,7 @@ moves_loop: // When in check, search starts from here
 
           if (captureOrPromotion)
           {
-              // Unless giving check, this capture is likely bad
+              // Increase reduction for non-checking captures likely to be bad
               if (   !givesCheck
                   && ss->staticEval + PieceValue[EG][pos.captured_piece()] + 210 * depth <= alpha)
                   r++;
@@ -1250,7 +1245,7 @@ moves_loop: // When in check, search starts from here
 
               // Decrease reduction for moves that escape a capture. Filter out
               // castling moves, because they are coded as "king captures rook" and
-              // hence break make_move(). (~2 Elo)
+              // hence break reverse_move() (~2 Elo)
               else if (    type_of(move) == NORMAL
                        && !pos.see_ge(reverse_move(move)))
                   r -= 2 + ss->ttPv - (type_of(movedPiece) == PAWN);
@@ -1278,10 +1273,10 @@ moves_loop: // When in check, search starts from here
                   r -= ss->statScore / 14790;
           }
 
-          // In general we want to cap the LMR depth search at newDepth. But for nodes
-          // close to the principal variation the cap is at (newDepth + 1), which will
-          // allow these nodes to be searched deeper than the pv (up to 4 plies deeper).
-          Depth d = std::clamp(newDepth - r, 1, newDepth + ((ss+1)->distanceFromPv <= 4));
+          // In general we want to cap the LMR depth search at newDepth. But if
+          // reductions are really negative and movecount is low, we allow this move
+          // to be searched deeper than the first move.
+          Depth d = std::clamp(newDepth - r, 1, newDepth + (r < -1 && moveCount <= 5));
 
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
 
@@ -1412,8 +1407,9 @@ moves_loop: // When in check, search starts from here
     assert(moveCount || !ss->inCheck || excludedMove || !MoveList<LEGAL>(pos).size());
 
     if (!moveCount)
-        bestValue = excludedMove ? alpha
-                   :     ss->inCheck ? mated_in(ss->ply) : VALUE_DRAW;
+        bestValue = excludedMove ? alpha :
+                    ss->inCheck  ? mated_in(ss->ply)
+                                 : VALUE_DRAW;
 
     // If there is a move which produces search value greater than alpha we update stats of searched moves
     else if (bestMove)
@@ -1463,7 +1459,7 @@ moves_loop: // When in check, search starts from here
 
     Move pv[MAX_PLY+1];
     StateInfo st;
-    ASSERT_ALIGNED(&st, Eval::NNUE::kCacheLineSize);
+    ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
     TTEntry* tte;
     Key posKey;
@@ -1969,7 +1965,7 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
 bool RootMove::extract_ponder_from_tt(Position& pos) {
 
     StateInfo st;
-    ASSERT_ALIGNED(&st, Eval::NNUE::kCacheLineSize);
+    ASSERT_ALIGNED(&st, Eval::NNUE::CacheLineSize);
 
     bool ttHit;
 

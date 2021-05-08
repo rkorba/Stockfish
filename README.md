@@ -33,9 +33,14 @@ This distribution of Stockfish consists of the following files:
   * a file with the .nnue extension, storing the neural network for the NNUE 
     evaluation. Binary distributions will have this file embedded.
 
-## UCI options
+## The UCI protocol and available options
 
-Currently, Stockfish has the following UCI options:
+The Universal Chess Interface (UCI) is a standard protocol used to communicate with a chess engine,
+and is the recommended way to do so for typical graphical user interfaces (GUI) or chess tools.
+
+Stockfish implements most commands as described in [the UCI protocol](https://www.shredderchess.com/download/div/uci.zip)
+
+For users, the following UCI options, which can typically be set via a GUI, are available in Stockfish:
 
   * #### Threads
     The number of CPU threads used for searching a position. For best performance, set
@@ -135,6 +140,28 @@ Currently, Stockfish has the following UCI options:
 
   * #### Debug Log File
     Write all communication to and from the engine into a text file.
+
+For developers the following non-standard commands might be of interest, mainly useful for debugging:
+
+  * #### bench ttSize threads limit fenFile limitType evalType
+    Performs a standard benchmark using various options. The signature or standard node
+    count is obtained using all defaults. `bench` is currently `bench 16 1 13 default depth mixed`.
+
+  * #### compiler
+    Give information about the compiler and environment used for building a binary.
+
+  * #### d
+    Display the current position, with ascii art and fen.
+
+  * #### eval
+    Return the evaluation of the current position.
+
+  * #### export_net
+    If the binary contains an embedded net, save it in a file (named according to the default value of EvalFile).
+
+  * #### flip
+    Flips the side to move.
+
 
 ## A note on classical evaluation versus NNUE evaluation
 
@@ -242,9 +269,9 @@ When not using the Makefile to compile (for instance, with Microsoft MSVC) you
 need to manually set/unset some switches in the compiler command line; see
 file *types.h* for a quick reference.
 
-When reporting an issue or a bug, please tell us which version and
-compiler you used to create your executable. These informations can
-be found by typing the following commands in a console:
+When reporting an issue or a bug, please tell us which Stockfish version
+and which compiler you used to create your executable. This information
+can be found by typing the following command in a console:
 
 ```
     ./stockfish compiler
@@ -252,8 +279,8 @@ be found by typing the following commands in a console:
 
 ## Understanding the code base and participating in the project
 
-Stockfish's improvement over the last couple of years has been a great
-community effort. There are a few ways to help contribute to its growth.
+Stockfish's improvement over the last decade has been a great community
+effort. There are a few ways to help contribute to its growth.
 
 ### Donating hardware
 
