@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2020 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -33,6 +33,8 @@
 #include "syzygy/tbprobe.h"
 
 using namespace std;
+
+namespace Stockfish {
 
 extern vector<string> setup_bench(const Position&, istream&);
 
@@ -85,7 +87,7 @@ namespace {
     Position p;
     p.set(pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
 
-    Eval::verify_NNUE();
+    Eval::NNUE::verify();
 
     sync_cout << "\n" << Eval::trace(p) << sync_endl;
   }
@@ -170,7 +172,7 @@ namespace {
 
         if (token == "go" || token == "eval")
         {
-            cerr << "\nPosition: " << cnt++ << '/' << num << endl;
+            cerr << "\nPosition: " << cnt++ << '/' << num << " (" << pos.fen() << ")" << endl;
             if (token == "go")
             {
                go(pos, is, states);
@@ -211,7 +213,7 @@ namespace {
      double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
 
      // Transform eval to centipawns with limited range
-     double x = Utility::clamp(double(100 * v) / PawnValueEg, -1000.0, 1000.0);
+     double x = std::clamp(double(100 * v) / PawnValueEg, -1000.0, 1000.0);
 
      // Return win rate in per mille (rounded to nearest)
      return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
@@ -275,7 +277,15 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "d")        sync_cout << pos << sync_endl;
       else if (token == "eval")     trace_eval(pos);
       else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
-      else
+      else if (token == "export_net") {
+          std::optional<std::string> filename;
+          std::string f;
+          if (is >> skipws >> f) {
+            filename = f;
+          }
+          Eval::NNUE::export_net(filename);
+      }
+      else if (!token.empty() && token[0] != '#')
           sync_cout << "Unknown command: " << cmd << sync_endl;
 
   } while (token != "quit" && argc == 1); // Command line args are one-shot
@@ -369,3 +379,5 @@ Move UCI::to_move(const Position& pos, string& str) {
 
   return MOVE_NONE;
 }
+
+} // namespace Stockfish

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2020 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,7 +18,6 @@
 
 // Code for calculating NNUE evaluation function
 
-#include <fstream>
 #include <iostream>
 #include <set>
 
@@ -26,150 +25,164 @@
 #include "../position.h"
 #include "../misc.h"
 #include "../uci.h"
+#include "../types.h"
 
 #include "evaluate_nnue.h"
 
-ExtPieceSquare kpp_board_index[PIECE_NB] = {
- // convention: W - us, B - them
- // viewed from other side, W and B are reversed
-    { PS_NONE,     PS_NONE     },
-    { PS_W_PAWN,   PS_B_PAWN   },
-    { PS_W_KNIGHT, PS_B_KNIGHT },
-    { PS_W_BISHOP, PS_B_BISHOP },
-    { PS_W_ROOK,   PS_B_ROOK   },
-    { PS_W_QUEEN,  PS_B_QUEEN  },
-    { PS_W_KING,   PS_B_KING   },
-    { PS_NONE,     PS_NONE     },
-    { PS_NONE,     PS_NONE     },
-    { PS_B_PAWN,   PS_W_PAWN   },
-    { PS_B_KNIGHT, PS_W_KNIGHT },
-    { PS_B_BISHOP, PS_W_BISHOP },
-    { PS_B_ROOK,   PS_W_ROOK   },
-    { PS_B_QUEEN,  PS_W_QUEEN  },
-    { PS_B_KING,   PS_W_KING   },
-    { PS_NONE,     PS_NONE     }
-};
-
-
-namespace Eval::NNUE {
+namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
-  AlignedPtr<FeatureTransformer> feature_transformer;
+  LargePagePtr<FeatureTransformer> featureTransformer;
 
   // Evaluation function
-  AlignedPtr<Network> network;
+  AlignedPtr<Network> network[LayerStacks];
 
   // Evaluation function file name
   std::string fileName;
+  std::string netDescription;
 
   namespace Detail {
 
   // Initialize the evaluation function parameters
   template <typename T>
-  void Initialize(AlignedPtr<T>& pointer) {
+  void initialize(AlignedPtr<T>& pointer) {
 
     pointer.reset(reinterpret_cast<T*>(std_aligned_alloc(alignof(T), sizeof(T))));
     std::memset(pointer.get(), 0, sizeof(T));
   }
 
+  template <typename T>
+  void initialize(LargePagePtr<T>& pointer) {
+
+    static_assert(alignof(T) <= 4096, "aligned_large_pages_alloc() may fail for such a big alignment requirement of T");
+    pointer.reset(reinterpret_cast<T*>(aligned_large_pages_alloc(sizeof(T))));
+    std::memset(pointer.get(), 0, sizeof(T));
+  }
+
   // Read evaluation function parameters
   template <typename T>
-  bool ReadParameters(std::istream& stream, const AlignedPtr<T>& pointer) {
+  bool read_parameters(std::istream& stream, T& reference) {
 
     std::uint32_t header;
-    stream.read(reinterpret_cast<char*>(&header), sizeof(header));
-    if (!stream || header != T::GetHashValue()) return false;
-    return pointer->ReadParameters(stream);
+    header = read_little_endian<std::uint32_t>(stream);
+    if (!stream || header != T::get_hash_value()) return false;
+    return reference.read_parameters(stream);
+  }
+
+  // Write evaluation function parameters
+  template <typename T>
+  bool write_parameters(std::ostream& stream, const T& reference) {
+
+    write_little_endian<std::uint32_t>(stream, T::get_hash_value());
+    return reference.write_parameters(stream);
   }
 
   }  // namespace Detail
 
   // Initialize the evaluation function parameters
-  void Initialize() {
+  void initialize() {
 
-    Detail::Initialize(feature_transformer);
-    Detail::Initialize(network);
+    Detail::initialize(featureTransformer);
+    for (std::size_t i = 0; i < LayerStacks; ++i)
+      Detail::initialize(network[i]);
   }
 
   // Read network header
-  bool ReadHeader(std::istream& stream,
-    std::uint32_t* hash_value, std::string* architecture) {
-
+  bool read_header(std::istream& stream, std::uint32_t* hashValue, std::string* desc)
+  {
     std::uint32_t version, size;
-    stream.read(reinterpret_cast<char*>(&version), sizeof(version));
-    stream.read(reinterpret_cast<char*>(hash_value), sizeof(*hash_value));
-    stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-    if (!stream || version != kVersion) return false;
-    architecture->resize(size);
-    stream.read(&(*architecture)[0], size);
+
+    version     = read_little_endian<std::uint32_t>(stream);
+    *hashValue  = read_little_endian<std::uint32_t>(stream);
+    size        = read_little_endian<std::uint32_t>(stream);
+    if (!stream || version != Version) return false;
+    desc->resize(size);
+    stream.read(&(*desc)[0], size);
+    return !stream.fail();
+  }
+
+  // Write network header
+  bool write_header(std::ostream& stream, std::uint32_t hashValue, const std::string& desc)
+  {
+    write_little_endian<std::uint32_t>(stream, Version);
+    write_little_endian<std::uint32_t>(stream, hashValue);
+    write_little_endian<std::uint32_t>(stream, desc.size());
+    stream.write(&desc[0], desc.size());
     return !stream.fail();
   }
 
   // Read network parameters
-  bool ReadParameters(std::istream& stream) {
+  bool read_parameters(std::istream& stream) {
 
-    std::uint32_t hash_value;
-    std::string architecture;
-    if (!ReadHeader(stream, &hash_value, &architecture)) return false;
-    if (hash_value != kHashValue) return false;
-    if (!Detail::ReadParameters(stream, feature_transformer)) return false;
-    if (!Detail::ReadParameters(stream, network)) return false;
+    std::uint32_t hashValue;
+    if (!read_header(stream, &hashValue, &netDescription)) return false;
+    if (hashValue != HashValue) return false;
+    if (!Detail::read_parameters(stream, *featureTransformer)) return false;
+    for (std::size_t i = 0; i < LayerStacks; ++i)
+      if (!Detail::read_parameters(stream, *(network[i]))) return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
-  // Proceed with the difference calculation if possible
-  static void UpdateAccumulatorIfPossible(const Position& pos) {
+  // Write network parameters
+  bool write_parameters(std::ostream& stream) {
 
-    feature_transformer->UpdateAccumulatorIfPossible(pos);
-  }
-
-  // Calculate the evaluation value
-  static Value ComputeScore(const Position& pos, bool refresh) {
-
-    auto& accumulator = pos.state()->accumulator;
-    if (!refresh && accumulator.computed_score) {
-      return accumulator.score;
-    }
-
-    alignas(kCacheLineSize) TransformedFeatureType
-        transformed_features[FeatureTransformer::kBufferSize];
-    feature_transformer->Transform(pos, transformed_features, refresh);
-    alignas(kCacheLineSize) char buffer[Network::kBufferSize];
-    const auto output = network->Propagate(transformed_features, buffer);
-
-    auto score = static_cast<Value>(output[0] / FV_SCALE);
-
-    accumulator.score = score;
-    accumulator.computed_score = true;
-    return accumulator.score;
-  }
-
-  // Load the evaluation function file
-  bool load_eval_file(const std::string& evalFile) {
-
-    Initialize();
-    fileName = evalFile;
-
-    std::ifstream stream(evalFile, std::ios::binary);
-
-    const bool result = ReadParameters(stream);
-
-    return result;
+    if (!write_header(stream, HashValue, netDescription)) return false;
+    if (!Detail::write_parameters(stream, *featureTransformer)) return false;
+    for (std::size_t i = 0; i < LayerStacks; ++i)
+      if (!Detail::write_parameters(stream, *(network[i]))) return false;
+    return (bool)stream;
   }
 
   // Evaluation function. Perform differential calculation.
   Value evaluate(const Position& pos) {
-    return ComputeScore(pos, false);
+
+    // We manually align the arrays on the stack because with gcc < 9.3
+    // overaligning stack variables with alignas() doesn't work correctly.
+
+    constexpr uint64_t alignment = CacheLineSize;
+
+#if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
+    TransformedFeatureType transformedFeaturesUnaligned[
+      FeatureTransformer::BufferSize + alignment / sizeof(TransformedFeatureType)];
+    char bufferUnaligned[Network::BufferSize + alignment];
+
+    auto* transformedFeatures = align_ptr_up<alignment>(&transformedFeaturesUnaligned[0]);
+    auto* buffer = align_ptr_up<alignment>(&bufferUnaligned[0]);
+#else
+    alignas(alignment)
+      TransformedFeatureType transformedFeatures[FeatureTransformer::BufferSize];
+    alignas(alignment) char buffer[Network::BufferSize];
+#endif
+
+    ASSERT_ALIGNED(transformedFeatures, alignment);
+    ASSERT_ALIGNED(buffer, alignment);
+
+    const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+
+    const auto [psqt, lazy] = featureTransformer->transform(pos, transformedFeatures, bucket);
+    if (lazy) {
+      return static_cast<Value>(psqt / OutputScale);
+    } else {
+      const auto output = network[bucket]->propagate(transformedFeatures, buffer);
+      return static_cast<Value>((output[0] + psqt) / OutputScale);
+    }
   }
 
-  // Evaluation function. Perform full calculation.
-  Value compute_eval(const Position& pos) {
-    return ComputeScore(pos, true);
+  // Load eval, from a file stream or a memory stream
+  bool load_eval(std::string name, std::istream& stream) {
+
+    initialize();
+    fileName = name;
+    return read_parameters(stream);
   }
 
-  // Proceed with the difference calculation if possible
-  void update_eval(const Position& pos) {
-    UpdateAccumulatorIfPossible(pos);
+  // Save eval, to a file stream or a memory stream
+  bool save_eval(std::ostream& stream) {
+
+    if (fileName.empty())
+      return false;
+
+    return write_parameters(stream);
   }
 
-} // namespace Eval::NNUE
+} // namespace Stockfish::Eval::NNUE
