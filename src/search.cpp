@@ -799,7 +799,6 @@ namespace {
     if (   !PvNode
         && (ss-1)->statScore < 24185
         &&  eval >= ss->staticEval
-        &&  ss->staticEval >= beta - 22 * depth - 34 * improving + 162 * ss->ttPv + 159
         && !excludedMove
         &&  pos.non_pawn_material(us)
         && (ss->ply >= thisThread->nmpMinPly || us != thisThread->nmpColor))
@@ -807,7 +806,7 @@ namespace {
         // Null move dynamic reduction based on depth and value
         Depth R = (1062 + 68 * depth) / 256 + std::min(std::max(0, int(eval - beta)) / 190, 3);
 
-	if(depth > R+4 || eval >= beta)
+	if(depth > R+2 || eval >= beta)
 	{
             ss->currentMove = MOVE_NULL;
             ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
@@ -815,14 +814,7 @@ namespace {
             pos.do_null_move(st);
 
             Value nullValue;
-            if(depth > R+1 && (eval < beta || !cutNode))
-            {
-                nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R-3, !cutNode);
-                if(nullValue >= beta)
-                    nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
-            }
-            else
-                nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
+            nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
 
             pos.undo_null_move();
 
