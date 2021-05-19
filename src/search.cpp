@@ -797,9 +797,7 @@ namespace {
 
     // Step 8. Null move search with verification search (~40 Elo)
     if (   !PvNode
-        && (ss-1)->currentMove != MOVE_NULL
         && (ss-1)->statScore < 24185
-        &&  (eval >= beta || depth > 5)
         &&  eval >= ss->staticEval
         &&  ss->staticEval >= beta - 22 * depth - 34 * improving + 162 * ss->ttPv + 159
         && !excludedMove
@@ -809,45 +807,48 @@ namespace {
         // Null move dynamic reduction based on depth and value
         Depth R = (1062 + 68 * depth) / 256 + std::min(std::max(0, int(eval - beta)) / 190, 3);
 
-        ss->currentMove = MOVE_NULL;
-        ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
+	if(depth > R+1 || eval >= beta)
+	{
+            ss->currentMove = MOVE_NULL;
+            ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
 
-        pos.do_null_move(st);
+            pos.do_null_move(st);
 
-        Value nullValue;
-        if(!cutNode && depth > R+1)
-        {
-        	nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R-2, !cutNode);
-        	if(nullValue >= beta)
-        		nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
-        }
-        else
-        	nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
+            Value nullValue;
+            if((!cutNode || eval < beta) && depth > R)
+            {
+                nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R-2, !cutNode);
+                if(nullValue >= beta)
+                    nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
+            }
+            else
+                nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
 
-        pos.undo_null_move();
+            pos.undo_null_move();
 
-        if (nullValue >= beta)
-        {
-            // Do not return unproven mate or TB scores
-            if (nullValue >= VALUE_TB_WIN_IN_MAX_PLY)
-                nullValue = beta;
+            if (nullValue >= beta)
+            {
+                // Do not return unproven mate or TB scores
+                if (nullValue >= VALUE_TB_WIN_IN_MAX_PLY)
+                    nullValue = beta;
 
-            if (thisThread->nmpMinPly || (abs(beta) < VALUE_KNOWN_WIN && depth < 14))
-                return nullValue;
+                if (thisThread->nmpMinPly || (abs(beta) < VALUE_KNOWN_WIN && depth < 14))
+                    return nullValue;
 
-            assert(!thisThread->nmpMinPly); // Recursive verification is not allowed
+                assert(!thisThread->nmpMinPly); // Recursive verification is not allowed
 
-            // Do verification search at high depths, with null move pruning disabled
-            // for us, until ply exceeds nmpMinPly.
-            thisThread->nmpMinPly = ss->ply + 3 * (depth-R) / 4;
-            thisThread->nmpColor = us;
+                // Do verification search at high depths, with null move pruning disabled
+                // for us, until ply exceeds nmpMinPly.
+                thisThread->nmpMinPly = ss->ply + 3 * (depth-R) / 4;
+                thisThread->nmpColor = us;
 
-            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, true);
+                Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, true);
 
-            thisThread->nmpMinPly = 0;
+                thisThread->nmpMinPly = 0;
 
-            if (v >= beta)
-                return nullValue;
+                if (v >= beta)
+                    return std::min(nullValue, v);
+	    }
         }
     }
 
