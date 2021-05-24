@@ -1193,8 +1193,6 @@ moves_loop: // When in check, search starts from here
       if (doFullDepthSearch)
       {
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
-	  if(!PvNode && !cutNode && value > alpha && depth >= 4)
-		 value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, false);
 
           // If the move passed LMR update its stats
           if (didLMR && !captureOrPromotion)
