@@ -1153,7 +1153,7 @@ moves_loop: // When in check, search starts from here
 
           // Increase reduction for cut nodes (~3 Elo)
           if (cutNode)
-              r += 1 + !captureOrPromotion;
+              r += 1 + (moveCount > 13) + !captureOrPromotion;
 
           if (!captureOrPromotion)
           {
@@ -1193,6 +1193,8 @@ moves_loop: // When in check, search starts from here
       if (doFullDepthSearch)
       {
           value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
+	  if(!PvNode && !cutNode && value > alpha && depth >= 4)
+		 value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, false);
 
           // If the move passed LMR update its stats
           if (didLMR && !captureOrPromotion)
@@ -1207,7 +1209,7 @@ moves_loop: // When in check, search starts from here
       // For PV nodes only, do a full PV search on the first move or after a fail
       // high (in the latter case search only if value < beta), otherwise let the
       // parent node fail low with value <= alpha and try another move.
-      if (PvNode && (moveCount == 1 || (value > alpha && (rootNode || value < beta))))
+      if (PvNode && (moveCount == 1 || value > alpha))
       {
           (ss+1)->pv = pv;
           (ss+1)->pv[0] = MOVE_NONE;
@@ -1333,11 +1335,12 @@ moves_loop: // When in check, search starts from here
         ss->ttPv = ss->ttPv && (ss+1)->ttPv;
 
     // Write gathered information in transposition table
+    const Depth ttwDepth = bestValue <= alpha && cutNode ? depth-1 : depth;
     if (!excludedMove && !(rootNode && thisThread->pvIdx))
         tte->save(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
                   bestValue >= beta ? BOUND_LOWER :
                   PvNode && bestMove ? BOUND_EXACT : BOUND_UPPER,
-                  depth, bestMove, ss->staticEval);
+                  ttwDepth, bestMove, ss->staticEval);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
