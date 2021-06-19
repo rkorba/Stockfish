@@ -1,6 +1,6 @@
 ## Overview
 
-[![Build Status](https://travis-ci.org/official-stockfish/Stockfish.svg?branch=master)](https://travis-ci.org/official-stockfish/Stockfish)
+[![Build Status](https://github.com/official-stockfish/Stockfish/actions/workflows/stockfish.yml/badge.svg)](https://github.com/official-stockfish/Stockfish/actions)
 [![Build Status](https://ci.appveyor.com/api/projects/status/github/official-stockfish/Stockfish?branch=master&svg=true)](https://ci.appveyor.com/project/mcostalba/stockfish/branch/master)
 
 [Stockfish](https://stockfishchess.org) is a free, powerful UCI chess engine
@@ -35,12 +35,14 @@ This distribution of Stockfish consists of the following files:
 
 ## The UCI protocol and available options
 
-The Universal Chess Interface (UCI) is a standard protocol used to communicate with a chess engine,
-and is the recommended way to do so for typical graphical user interfaces (GUI) or chess tools.
+The Universal Chess Interface (UCI) is a standard protocol used to communicate with
+a chess engine, and is the recommended way to do so for typical graphical user interfaces
+(GUI) or chess tools. Stockfish implements the majority of it options as described
+in [the UCI protocol](https://www.shredderchess.com/download/div/uci.zip).
 
-Stockfish implements most commands as described in [the UCI protocol](https://www.shredderchess.com/download/div/uci.zip)
-
-For users, the following UCI options, which can typically be set via a GUI, are available in Stockfish:
+Developers can see the default values for UCI options available in Stockfish by typing
+`./stockfish uci` in a terminal, but the majority of users will typically see them and
+change them via a chess GUI. This is a list of available UCI options in Stockfish:
 
   * #### Threads
     The number of CPU threads used for searching a position. For best performance, set
@@ -143,9 +145,9 @@ For users, the following UCI options, which can typically be set via a GUI, are 
 
 For developers the following non-standard commands might be of interest, mainly useful for debugging:
 
-  * #### bench ttSize threads limit fenFile limitType evalType
-    Performs a standard benchmark using various options. The signature or standard node
-    count is obtained using all defaults. `bench` is currently `bench 16 1 13 default depth mixed`.
+  * #### bench *ttSize threads limit fenFile limitType evalType*
+    Performs a standard benchmark using various options. The signature of a version (standard node
+    count) is obtained using all defaults. `bench` is currently `bench 16 1 13 default depth mixed`.
 
   * #### compiler
     Give information about the compiler and environment used for building a binary.
