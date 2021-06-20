@@ -564,8 +564,8 @@ namespace {
     Move ttMove, move, excludedMove, bestMove;
     Depth extension, newDepth;
     Value bestValue, value, ttValue, eval, maxValue, probCutBeta;
-    bool givesCheck, improving, didLMR, priorCapture;
-    bool captureOrPromotion, doFullDepthSearch, moveCountPruning,
+    bool givesCheck, improving, priorCapture;
+    bool captureOrPromotion, moveCountPruning,
          ttCapture, singularQuietLMR;
     Piece movedPiece;
     int moveCount, captureCount, quietCount;
@@ -1190,30 +1190,25 @@ moves_loop: // When in check, search starts from here
                   r -= ss->statScore / 14721;
           }
       }
-      if(r > 0) {
-          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth-r, true);
-          doFullDepthSearch = value > alpha;
-          didLMR = true;
-      }
-      else
-      {
-          doFullDepthSearch = !PvNode || moveCount > 1;
-          didLMR = false;
-      }
 
       // Step 17. Full depth search when LMR is skipped or fails high
-      if (doFullDepthSearch)
+      if (!PvNode || moveCount > 1)
       {
-          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
+	  if(r > 0)
+	      value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth-r, true);
+	  if(r <= 0 || value > alpha)
+	  {
+              value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, false);
 
-          // If the move passed LMR update its stats
-          if (didLMR && !captureOrPromotion)
-          {
-              int bonus = value > alpha ?  stat_bonus(newDepth)
-                                        : -stat_bonus(newDepth);
+              // If the move passed LMR update its stats
+              if (r > 0 && !captureOrPromotion)
+              {
+                  int bonus = value > alpha ?  stat_bonus(newDepth)
+                                            : -stat_bonus(newDepth);
 
-              update_continuation_histories(ss, movedPiece, to_sq(move), bonus);
-          }
+                  update_continuation_histories(ss, movedPiece, to_sq(move), bonus);
+              }
+	  }
       }
 
       // For PV nodes only, do a full PV search on the first move or after a fail
